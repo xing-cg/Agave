@@ -1,7 +1,7 @@
 //--------------------------------------------------------------------
 //	BJobScheduler.h.
 //	09/27/2022.				created.
-//	08/05/2024.				last modified.
+//	08/04/2025.				last modified.
 //--------------------------------------------------------------------
 //	*	Job Scheduler - A Part of Agave(TM) Coroutine Framework 
 //		(based on ISO C++20 or later).
@@ -23,6 +23,8 @@
 #include <functional>
 #include <thread>
 #include <list>
+#include <tuple>
+#include <chrono>
 #include "B_Object.hpp"
 
 
