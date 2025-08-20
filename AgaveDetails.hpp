@@ -257,7 +257,7 @@ namespace agave::details
 	class cancellation_token_t
 	{
 	public:
-		template <typename Promise>
+		template <typename>
 		friend class cancellation_token_awaiter_t;
 
 		//--------------------------------------------------------------------
@@ -1184,7 +1184,7 @@ namespace agave::details
 
     
 	//--------------------------------------------------------------------
-	//  the base class of promise for async action / operation.
+	//  the base class of promise for async action / async operation.
 	//--------------------------------------------------------------------
 	template <typename T, typename Promise, typename Progress>
 	class promise_base_t : public promise_base_data_t<T, Progress>
