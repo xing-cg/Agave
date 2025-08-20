@@ -1,7 +1,7 @@
 //--------------------------------------------------------------------
 //	AgaveDetails.hpp.
 //	09/27/2022.				created.
-//	09/14/2024.				last modified.
+//	08/20/2025.				last modified.
 //--------------------------------------------------------------------
 //	*	Agave(TM) Coroutine Framework (based on ISO C++20 or later).
 //	*	if has any questions, 
@@ -26,20 +26,7 @@
 #include <future>
 #include <atomic>
 #include <condition_variable>
-
-
-//--------------------------------------------------------------------
-//	incomplete types.
-//--------------------------------------------------------------------
-namespace agave
-{
-	//--------------------------------------------------------------------
-	template <typename Promise>
-	class CancellationToken;
-
-	//--------------------------------------------------------------------
-
-}
+#include <functional>
 
 
 //--------------------------------------------------------------------
@@ -103,13 +90,13 @@ namespace agave::details
 	public:
 		std::coroutine_handle<>					_h;        // outer coroutine handle.
 		std::mutex								_mx;
-		std::condition_variable				_cv;
+		std::condition_variable					_cv;
 		std::atomic_bool						_is_cancel{ false };
 		std::atomic_bool						_is_ready{ false };
 		std::function<void(void)>				_cancel_fn;
 		BJobToken								_cb_token{ nullptr };
 		bool									_cancellation_propagation{ true };
-		std::weak_ptr<async_action_data_t>			_next;
+		std::weak_ptr<async_action_data_t>		_next;
 
 	};
 
@@ -264,20 +251,67 @@ namespace agave::details
 
 
 	//--------------------------------------------------------------------
-	//  dummy type for cancellation mechanism.
-	//--------------------------------------------------------------------
-	struct get_cancellation_token_t {};
-
-
-	//--------------------------------------------------------------------
-	//	token for cancellation.
+	//	*** token for cancellation ***
 	//--------------------------------------------------------------------
 	template <typename Promise>
 	class cancellation_token_t
 	{
 	public:
+		template <typename Promise>
+		friend class cancellation_token_awaiter_t;
+
 		//--------------------------------------------------------------------
+		operator bool() const noexcept
+		{
+			return is_canceled();
+		}
+
+		//--------------------------------------------------------------------
+		bool is_canceled(void) const noexcept
+		{
+			if (_promise)
+				return _promise->_async_data->_is_cancel.load(std::memory_order::acquire);
+
+			return false;
+		}
+
+		//--------------------------------------------------------------------
+		bool enable_propagation(bool value = true) const noexcept
+		{
+			return _promise->enable_cancellation_propagation(value);
+		}
+
+		//--------------------------------------------------------------------
+
+	private:
 		cancellation_token_t(Promise* promise) noexcept : _promise{ promise }
+		{
+			//
+		}
+
+		//--------------------------------------------------------------------
+
+	private:
+		Promise*					_promise;
+
+	};
+
+
+	//--------------------------------------------------------------------
+	//  dummy type for cancellation mechanism.
+	//--------------------------------------------------------------------
+	struct get_cancellation_token_awaiter_t {};
+
+
+	//--------------------------------------------------------------------
+	//	awaiter for cancellation token.
+	//--------------------------------------------------------------------
+	template <typename Promise>
+	class cancellation_token_awaiter_t
+	{
+	public:
+		//--------------------------------------------------------------------
+		cancellation_token_awaiter_t(Promise* promise) noexcept : _promise{ promise }
 		{
 			//
 		}
@@ -295,7 +329,7 @@ namespace agave::details
 		}
 
 		//--------------------------------------------------------------------
-		agave::CancellationToken<Promise> await_resume() const noexcept
+		cancellation_token_t<Promise> await_resume() const noexcept
 		{
 			return _promise;
 		}
@@ -305,6 +339,59 @@ namespace agave::details
 	private:
 		//--------------------------------------------------------------------
 		Promise*						_promise;
+
+		//--------------------------------------------------------------------
+
+	};
+
+
+	//--------------------------------------------------------------------
+	//	custom awaiter for suspend always.
+	//--------------------------------------------------------------------
+	template <typename T>
+	class suspend_always_t
+	{
+	public:
+		//--------------------------------------------------------------------
+		suspend_always_t(
+			std::function<void(std::coroutine_handle<>)> ready_cb,
+			std::function<T(void)> resume_cb) noexcept :
+			_ready_cb{ ready_cb }, _resume_cb{ resume_cb } 
+		{
+			//
+		}
+
+		//--------------------------------------------------------------------
+		[[nodiscard]] 
+		constexpr bool await_ready(void) const noexcept 
+		{
+			return false;
+		}
+
+		//--------------------------------------------------------------------
+		constexpr void await_suspend(std::coroutine_handle<> h) const noexcept
+		{
+			if (_ready_cb)
+				_ready_cb(h);
+			
+			return;
+		}
+
+		//--------------------------------------------------------------------
+		decltype(auto) await_resume() const noexcept
+		{
+			if (_resume_cb)
+				return _resume_cb();
+
+			return;
+		}
+
+		//--------------------------------------------------------------------
+
+	private:
+		//--------------------------------------------------------------------
+		std::function<void(std::coroutine_handle<>)>	_ready_cb;
+		std::function<T(void)>							_resume_cb;
 
 		//--------------------------------------------------------------------
 
@@ -525,6 +612,102 @@ namespace agave::details
         //--------------------------------------------------------------------
 
     };
+
+
+	//--------------------------------------------------------------------
+	//  dummy type for getting caller's raw coroutine handle.
+	//--------------------------------------------------------------------
+	struct get_caller_raw_coroutine_handle_t {};
+
+
+	//--------------------------------------------------------------------
+	//	awaiter for caller's raw coroutine.
+	//--------------------------------------------------------------------
+	class caller_raw_coroutine_handle_awaiter_t
+	{
+	public:
+		//--------------------------------------------------------------------
+		caller_raw_coroutine_handle_awaiter_t(std::coroutine_handle<> handle) noexcept :
+			_handle{ handle }
+		{
+			//
+		}
+
+		//--------------------------------------------------------------------
+		constexpr bool await_ready() const noexcept
+		{
+			return true;
+		}
+
+		//--------------------------------------------------------------------
+		constexpr void await_suspend(std::coroutine_handle<>) const noexcept
+		{
+			//
+		}
+
+		//--------------------------------------------------------------------
+		std::coroutine_handle<> await_resume() const noexcept
+		{
+			return _handle;
+		}
+
+		//--------------------------------------------------------------------
+
+	private:
+		//--------------------------------------------------------------------
+		std::coroutine_handle<>						_handle;
+
+		//--------------------------------------------------------------------
+
+	};
+
+
+	//--------------------------------------------------------------------
+	//  dummy type for getting raw coroutine handle.
+	//--------------------------------------------------------------------
+	struct get_raw_coroutine_handle_t {};
+
+
+	//--------------------------------------------------------------------
+	//	awaiter for raw coroutine.
+	//--------------------------------------------------------------------
+	class raw_coroutine_handle_awaiter_t
+	{
+	public:
+		//--------------------------------------------------------------------
+		raw_coroutine_handle_awaiter_t(std::coroutine_handle<> handle) noexcept :
+			_handle{ handle }
+		{
+			//
+		}
+
+		//--------------------------------------------------------------------
+		constexpr bool await_ready() const noexcept
+		{
+			return true;
+		}
+
+		//--------------------------------------------------------------------
+		constexpr void await_suspend(std::coroutine_handle<>) const noexcept
+		{
+			//
+		}
+
+		//--------------------------------------------------------------------
+		std::coroutine_handle<> await_resume() const noexcept
+		{
+			return _handle;
+		}
+
+		//--------------------------------------------------------------------
+
+	private:
+		//--------------------------------------------------------------------
+		std::coroutine_handle<>						_handle;
+
+		//--------------------------------------------------------------------
+
+	};
 
 
 	//--------------------------------------------------------------------
@@ -977,33 +1160,80 @@ namespace agave::details
 
 	};
 
+
+	//--------------------------------------------------------------------
+	//  *** Promise Base Data Traits ***
+	//--------------------------------------------------------------------
+	template <typename T, typename Progress>
+	class promise_base_data_t
+	{
+	public:
+		std::shared_ptr<AsyncDataType<T>>                       _async_data;
+		std::shared_ptr<progress_data_t<Progress>>              _pg_data;
+
+	};
+
+	//--------------------------------------------------------------------
+	template <typename T>
+	class promise_base_data_t<T, void>	// specializations.
+	{
+	public:
+		std::shared_ptr<AsyncDataType<T>>                       _async_data;
+
+	};
+
     
 	//--------------------------------------------------------------------
 	//  the base class of promise for async action / operation.
 	//--------------------------------------------------------------------
 	template <typename T, typename Promise, typename Progress>
-	class promise_base_t
+	class promise_base_t : public promise_base_data_t<T, Progress>
 	{
 	public:
+
         //--------------------------------------------------------------------
         progress_controller_awaiter_t<Progress>
-            await_transform(get_progress_controller_t t) noexcept
+            await_transform(get_progress_controller_t t) noexcept 
+			requires(!std::is_void_v<Progress>)
         {
-            return _pg_data;
+            return this->_pg_data;
         }
 
         //--------------------------------------------------------------------
-        void init_progress(async_progress_base_t<Progress>* progress) noexcept
+        void init_progress(async_progress_base_t<Progress>* progress) noexcept 
         {
-            if (progress)
-                _pg_data = progress->_pg_data;
+			if constexpr (!std::is_void_v<Progress>)
+				if (progress)
+					this->_pg_data = progress->_pg_data;
         }
-        
+
 		//--------------------------------------------------------------------
-		cancellation_token_t<Promise>
-			await_transform(get_cancellation_token_t t) noexcept
+		raw_coroutine_handle_awaiter_t
+			await_transform(get_raw_coroutine_handle_t t) noexcept
+		{
+			return { static_cast<std::coroutine_handle<>>(std::coroutine_handle<Promise>::from_promise(*static_cast<Promise*>(this))) };
+		}
+
+		//--------------------------------------------------------------------
+		caller_raw_coroutine_handle_awaiter_t
+			await_transform(get_caller_raw_coroutine_handle_t t) noexcept
+		{
+			return { this->_async_data->_h };
+		}
+
+		//--------------------------------------------------------------------
+		cancellation_token_awaiter_t<Promise>
+			await_transform(get_cancellation_token_awaiter_t t) noexcept
 		{
 			return { static_cast<Promise*>(this) };
+		}
+
+		//--------------------------------------------------------------------
+		template <typename T>
+		decltype(auto)
+			await_transform(suspend_always_t<T> const& awaiter) noexcept
+		{
+			return awaiter;
 		}
         
 		//--------------------------------------------------------------------
@@ -1011,210 +1241,54 @@ namespace agave::details
 			await_transform(std::chrono::high_resolution_clock::duration t) noexcept
 		{
 			timespan_awaiter_t<Promise> time_span_awaiter{ static_cast<Promise*>(this), t };
-			_async_data->_next = time_span_awaiter._async_data;
-
+			this->_async_data->_next = time_span_awaiter._async_data;
+			
 			return time_span_awaiter;
 		}
 
 		//--------------------------------------------------------------------
-		auto await_transform(bg_awaitable_t&& awaiter) noexcept
+		decltype(auto) 
+			await_transform(bg_awaitable_t const& awaiter) noexcept
 		{
 			return awaiter;
 		}
 
 		//--------------------------------------------------------------------
-		auto& await_transform(bg_awaitable_t const& awaiter)
-		{
-			return awaiter;
-		}
-
-		//--------------------------------------------------------------------
-		auto await_transform(fg_awaitable_t&& awaiter) noexcept
-		{
-			return awaiter;
-		}
-
-		//--------------------------------------------------------------------
-		auto& await_transform(fg_awaitable_t const& awaiter)
+		decltype(auto) 
+			await_transform(fg_awaitable_t const& awaiter) noexcept
 		{
 			return awaiter;
 		}
 
 		//--------------------------------------------------------------------
 		template <typename P>
-		auto await_transform(async_action_base_t<P>&& awaiter) noexcept
+		decltype(auto)
+			await_transform(async_action_base_t<P> const& awaiter) noexcept
 		{
-			_async_data->_next = awaiter._async_data;
-			return awaiter;
-		}
-
-		//--------------------------------------------------------------------
-		template <typename P>
-		auto& await_transform(async_action_base_t<P> const& awaiter)
-		{
-			_async_data->_next = awaiter._async_data;
+			this->_async_data->_next = awaiter._async_data;
 			return awaiter;
 		}
 
 		//--------------------------------------------------------------------
 		template <typename U, typename P>
-		auto await_transform(async_operation_base_t<U, P, async_operation_t<U, P>>&& awaiter) noexcept
+		decltype(auto)
+			await_transform(async_operation_base_t<U, P, async_operation_t<U, P>> const& awaiter) noexcept
 		{
-			_async_data->_next = awaiter._async_data;
-			return awaiter;
-		}
-
-		//--------------------------------------------------------------------
-		template <typename U, typename P>
-		auto& await_transform(async_operation_base_t<U, P, async_operation_t<U, P>> const& awaiter)
-		{
-			_async_data->_next = awaiter._async_data;
+			this->_async_data->_next = awaiter._async_data;
 			return awaiter;
 		}
 
 		//--------------------------------------------------------------------
 		template <typename P>
-		auto await_transform(progress_reporter_base_t<P>&& awaiter) noexcept
+		decltype(auto) 
+			await_transform(progress_reporter_base_t<P> const& awaiter) noexcept
 		{
 			return awaiter;
 		}
-
-		//--------------------------------------------------------------------
-		template <typename P>
-		auto& await_transform(progress_reporter_base_t<P> const& awaiter)
-		{
-			return awaiter;
-		}
-
-		//--------------------------------------------------------------------
-		std::shared_ptr<AsyncDataType<T>>                       _async_data;
-        std::shared_ptr<progress_data_t<Progress>>              _pg_data;
 
 		//--------------------------------------------------------------------
 
 	};
-
-
-	//--------------------------------------------------------------------
-	//  specializations for promise_base_t class.
-    //--------------------------------------------------------------------
-    template <typename T, typename Promise>
-    class promise_base_t<T, Promise, void>
-    {
-    public:
-        //--------------------------------------------------------------------
-        void init_progress(async_progress_base_t<void>* progress) noexcept
-        {
-            // none
-        }
-        
-        //--------------------------------------------------------------------
-        cancellation_token_t<Promise>
-            await_transform(get_cancellation_token_t t) noexcept
-        {
-            return { static_cast<Promise*>(this) };
-        }
-        
-        //--------------------------------------------------------------------
-        timespan_awaiter_t<Promise>
-            await_transform(std::chrono::high_resolution_clock::duration t) noexcept
-        {
-            timespan_awaiter_t<Promise> time_span_awaiter{ static_cast<Promise*>(this), t };
-            _async_data->_next = time_span_awaiter._async_data;
-
-            return time_span_awaiter;
-        }
-
-        //--------------------------------------------------------------------
-        auto await_transform(bg_awaitable_t&& awaiter) noexcept
-        {
-            return awaiter;
-        }
-
-        //--------------------------------------------------------------------
-        auto& await_transform(bg_awaitable_t const& awaiter)
-        {
-            return awaiter;
-        }
-
-        //--------------------------------------------------------------------
-        auto await_transform(fg_awaitable_t&& awaiter) noexcept
-        {
-            return awaiter;
-        }
-
-        //--------------------------------------------------------------------
-        auto& await_transform(fg_awaitable_t const& awaiter)
-        {
-            return awaiter;
-        }
-
-        //--------------------------------------------------------------------
-		template <typename P>
-        auto await_transform(async_action_base_t<P>&& awaiter) noexcept
-        {
-            _async_data->_next = awaiter._async_data;
-            return awaiter;
-        }
-
-        //--------------------------------------------------------------------
-		template <typename P>
-        auto& await_transform(async_action_base_t<P> const& awaiter)
-        {
-            _async_data->_next = awaiter._async_data;
-            return awaiter;
-        }
-
-        //--------------------------------------------------------------------
-        template <typename U, typename P>
-        auto await_transform(async_operation_base_t<U, P>&& awaiter) noexcept
-        {
-            _async_data->_next = awaiter._async_data;
-            return awaiter;
-        }
-
-        //--------------------------------------------------------------------
-		template <typename U, typename P>
-        auto& await_transform(async_operation_base_t<U, P> const& awaiter)
-        {
-            _async_data->_next = awaiter._async_data;
-            return awaiter;
-        }
-
-        //--------------------------------------------------------------------
-        template <typename P>
-        auto await_transform(progress_reporter_base_t<P>&& awaiter) noexcept
-        {
-            return awaiter;
-        }
-
-        //--------------------------------------------------------------------
-        template <typename P>
-        auto& await_transform(progress_reporter_base_t<P> const& awaiter)
-        {
-            return awaiter;
-        }
-
-        //--------------------------------------------------------------------
-        template <typename U>
-        auto& await_transform(std::future<U> const& future)
-        {
-            return future;
-        }
-        
-        //--------------------------------------------------------------------
-        template <typename U>
-        auto await_transform(std::future<U>&& future) noexcept
-        {
-            return future;
-        }
-        
-        //--------------------------------------------------------------------
-        std::shared_ptr<AsyncDataType<T>>                       _async_data;
-
-        //--------------------------------------------------------------------
-
-    };
 
 
 	//--------------------------------------------------------------------
@@ -1225,6 +1299,7 @@ namespace agave::details
 		public promise_base_t<void, async_action_promise_t<Progress>, Progress>
 	{
 	public:
+
 		//--------------------------------------------------------------------
 		async_action_t<Progress> get_return_object(void)
 		{
@@ -1234,7 +1309,7 @@ namespace agave::details
 				this->_async_data };
 
 			// initialize the progress data.
-            this->init_progress(static_cast<async_progress_base_t<Progress>*>(&action));
+			this->init_progress(static_cast<async_progress_base_t<Progress>*>(&action));
 
             return action;
 		}
@@ -1315,6 +1390,7 @@ namespace agave::details
 		public promise_base_t<T, async_operation_promise_t<T, Progress>, Progress>
 	{
 	public:
+
 		//--------------------------------------------------------------------
 		async_operation_t<T, Progress> get_return_object(void)
 		{

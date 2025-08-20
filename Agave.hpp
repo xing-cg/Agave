@@ -1,7 +1,7 @@
 //--------------------------------------------------------------------
 //	Agave.hpp.
 //	09/27/2022.				created.
-//	09/18/2024.				last modified.
+//	08/20/2025.				last modified.
 //--------------------------------------------------------------------
 //	*	Agave(TM) Coroutine Framework (based on ISO C++20 or later).
 //	*	if has any questions, 
@@ -43,31 +43,63 @@ namespace agave
 
 
 	//--------------------------------------------------------------------
-	inline auto resume_background(void)
+	//	*** token for cancellation ***
+	//--------------------------------------------------------------------
+	template <typename T>
+	using CancellationToken = details::cancellation_token_t<T>;
+
+
+	//--------------------------------------------------------------------
+	template <typename T = void>
+	inline decltype(auto) 
+		suspend_always(
+		std::function<void(std::coroutine_handle<>)> ready_cb = nullptr,
+		std::function<T(void)> resume_cb = nullptr)
+	{
+		return details::suspend_always_t{ ready_cb, resume_cb };
+	}
+
+
+	//--------------------------------------------------------------------
+	inline decltype(auto) resume_background(void)
 	{
 		return details::bg_awaitable_t{ };
 	}
 
 
 	//--------------------------------------------------------------------
-	inline auto resume_foreground(void)
+	inline decltype(auto) resume_foreground(void)
 	{
 		return details::fg_awaitable_t{ };
 	}
 
 
 	//--------------------------------------------------------------------
-	inline auto get_cancellation_token(void)
+	inline decltype(auto) get_cancellation_token(void)
 	{
-		return details::get_cancellation_token_t{ };
+		return details::get_cancellation_token_awaiter_t{ };
 	}
 
 
     //--------------------------------------------------------------------
-    inline auto get_progress_controller(void)
+    inline decltype(auto) get_progress_controller(void)
     {
         return details::get_progress_controller_t{ };
     }
+
+
+	//--------------------------------------------------------------------
+    inline decltype(auto) get_raw_coroutine_handle(void)
+    {
+        return details::get_raw_coroutine_handle_t{ };
+    }
+
+
+	//--------------------------------------------------------------------
+	inline decltype(auto) get_caller_raw_coroutine_handle(void)
+	{
+		return details::get_caller_raw_coroutine_handle_t{ };
+	}
 
 
     //--------------------------------------------------------------------
@@ -89,7 +121,7 @@ namespace agave
 
 
     //--------------------------------------------------------------------
-    //  *** types for progress reportering mechanism ***
+    //  *** types for progress reporting mechanism ***
 	//--------------------------------------------------------------------
     template <typename P>
     using ProgressReporter = details::progress_reporter_base_t<P>;
@@ -97,58 +129,6 @@ namespace agave
     //--------------------------------------------------------------------
     template <typename P>
     using ProgressController = details::progress_controller_t<P>;
-
-
-	//--------------------------------------------------------------------
-	//	*** token for cancellation ***
-	//--------------------------------------------------------------------
-	template <typename Promise>
-	class CancellationToken
-	{
-		//--------------------------------------------------------------------
-		//	friend class types.
-		//--------------------------------------------------------------------
-		template <typename>
-		friend class details::cancellation_token_t;
-
-		//--------------------------------------------------------------------
-
-	public:
-		//--------------------------------------------------------------------
-		operator bool() const noexcept
-		{
-			return is_canceled();
-		}
-
-		//--------------------------------------------------------------------
-		bool is_canceled(void) const noexcept
-		{
-			if (_promise)
-				return _promise->_async_data->_is_cancel.load(std::memory_order::acquire);
-            
-			return false;
-		}
-
-		//--------------------------------------------------------------------
-		bool enable_propagation(bool value = true) const noexcept
-		{
-			return _promise->enable_cancellation_propagation(value);
-		}
-
-		//--------------------------------------------------------------------
-
-	private:
-		CancellationToken(Promise* promise) noexcept : _promise{ promise }
-		{
-			//
-		}
-
-		//--------------------------------------------------------------------
-
-	private:
-		Promise*                    _promise;
-
-	};
 
 
 	//--------------------------------------------------------------------
