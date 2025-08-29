@@ -1,3 +1,30 @@
+# epoll+Agave
+服务器单线程：
+100个连接，每个连接1000条消息：
+echo_epoll：2.200s
+echo_阻塞版：3.108s
+
+1000个连接，每个连接10000条消息：
+echo_epoll：263.511s
+
+服务器多线程：（单accept + eventfd）
+100个连接，每个连接1000条消息：
+echo_epoll：2.800s
+1000个连接，每个连接10000条消息：
+echo_epoll：340.827s
+
+服务器多线程：（每个线程均accept - SO_REUSEPORT）
+100个连接，每个连接1000条消息：
+echo_epoll_reuseport：2.780s
+
+
+服务器多线程：
+10000个连接，每个连接10条消息：
+echo_epoll_eventfd：4.813s
+echo_epoll_reuseport：4.950s
+
+1000个连接，每个连接10000条消息：
+
 # Agave (TM) C++20 Standard Coroutine Library Framework
 
 
